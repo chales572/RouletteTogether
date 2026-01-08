@@ -28,6 +28,11 @@ const Room: React.FC<RoomProps> = ({ socket, roomName, userName }) => {
     const [emoticons, setEmoticons] = useState<EmoticonMessage[]>([]);
     const [notifications, setNotifications] = useState<UserNotification[]>([]);
 
+    // Debug: Log isHost changes
+    useEffect(() => {
+        console.log('🔍 isHost state changed:', isHost, 'hostId:', hostId);
+    }, [isHost, hostId]);
+
     useEffect(() => {
         if (!socket) {
             console.log('Socket not ready yet');
@@ -265,10 +270,14 @@ const Room: React.FC<RoomProps> = ({ socket, roomName, userName }) => {
                     <div className="room-info">
                         <h2>
                             초대 코드: {roomName}
-                            {isHost ? (
-                                <span className="host-badge">👑 방장</span>
+                            {socket && hostId ? (
+                                isHost ? (
+                                    <span className="host-badge">👑 방장</span>
+                                ) : (
+                                    <span className="participant-badge">👤 참가자</span>
+                                )
                             ) : (
-                                <span className="participant-badge">👤 참가자</span>
+                                <span className="participant-badge" style={{opacity: 0.5}}>⏳ 확인 중...</span>
                             )}
                         </h2>
                         <button
