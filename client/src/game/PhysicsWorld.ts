@@ -7,19 +7,24 @@ export class PhysicsWorld {
     private render: Matter.Render;
     private runner: Matter.Runner;
     private rng: seedrandom.PRNG;
+    private onWinner: (participant: Participant, rule: Rule) => void;
+    private rules: Rule[] = [];
+    private detectedWinners: Set<string> = new Set();
+    private stuckCheckInterval: NodeJS.Timeout | null = null;
 
-    constructor(canvas: HTMLCanvasElement, seed: number | string, onGameOver: (winner: Participant) => void) {
+    constructor(canvas: HTMLCanvasElement, seed: number | string, onWinner: (participant: Participant, rule: Rule) => void) {
+        console.log('PhysicsWorld: Constructor called with seed:', seed);
         this.rng = seedrandom(String(seed));
+        this.onWinner = onWinner;
 
         // Create engine
         this.engine = Matter.Engine.create();
 
-        // Adjust gravity for better feel
-        this.engine.gravity.y = 1;
+        // Adjust gravity for better feel and prevent sticking
+        this.engine.gravity.y = 1.2;
 
         // Create renderer
         this.render = Matter.Render.create({
-            element: canvas.parentElement!,
             canvas: canvas,
             engine: this.engine,
             options: {
@@ -31,19 +36,32 @@ export class PhysicsWorld {
         });
 
         this.runner = Matter.Runner.create();
+        console.log('PhysicsWorld: Initialized successfully');
 
-        // Add custom rendering for names
+        // Add custom rendering for names and slot labels
         Matter.Events.on(this.render, 'afterRender', () => {
             const context = this.render.context;
             const bodies = Matter.Composite.allBodies(this.engine.world);
 
-            context.font = "12px Arial";
-            context.fillStyle = "white";
             context.textAlign = "center";
 
             bodies.forEach(body => {
-                if (body.label && body.label !== 'Rectangle Body' && body.label !== 'Circle Body' && !body.isStatic) {
+                // Render participant names above balls
+                if (body.label && body.label !== 'Rectangle Body' && body.label !== 'Circle Body' && !body.isStatic && !body.label.startsWith('Slot_')) {
+                    context.font = "bold 12px Arial";
+                    context.fillStyle = "white";
                     context.fillText(body.label, body.position.x, body.position.y - 15);
+                }
+
+                // Render slot labels
+                if (body.label && body.label.startsWith('Slot_')) {
+                    const slotId = body.label.replace('Slot_', '');
+                    const rule = this.rules.find(r => r.id === slotId);
+                    if (rule) {
+                        context.font = "bold 14px Arial";
+                        context.fillStyle = "#4cd137";
+                        context.fillText(rule.label, body.position.x, body.position.y + 5);
+                    }
                 }
             });
         });
@@ -53,6 +71,7 @@ export class PhysicsWorld {
     }
 
     public initLevel() {
+        console.log('PhysicsWorld: Initializing level');
         // Simple Plinko board
         const width = 500;
         const height = 800;
@@ -90,7 +109,9 @@ export class PhysicsWorld {
                         const peg = Bodies.circle(x, y, 5, {
                             isStatic: true,
                             render: { fillStyle: '#4ecdc4' },
-                            restitution: 0.5
+                            restitution: 0.6,
+                            friction: 0.001,
+                            frictionStatic: 0.001
                         });
                         World.add(this.engine.world, peg);
                     }
@@ -100,6 +121,7 @@ export class PhysicsWorld {
     }
 
     public addParticipants(participants: Participant[]) {
+        console.log('PhysicsWorld: Adding participants:', participants);
         const World = Matter.World;
         const Bodies = Matter.Bodies;
         const width = 500;
@@ -111,8 +133,11 @@ export class PhysicsWorld {
 
             const ball = Bodies.circle(x, y, 12, {
                 label: p.name,
-                restitution: 0.9,
-                friction: 0.005,
+                restitution: 0.8,
+                friction: 0.001,
+                frictionAir: 0.001,
+                density: 0.001,
+                slop: 0.05,
                 render: { fillStyle: this.getRandomColor() }
             });
 
@@ -126,15 +151,21 @@ export class PhysicsWorld {
     }
 
     public addRules(rules: Rule[]) {
+        console.log('PhysicsWorld: Adding rules:', rules);
+        this.rules = rules;
         const World = Matter.World;
         const Bodies = Matter.Bodies;
         const width = 500;
         const height = 800;
 
-        if (rules.length === 0) return;
+        if (rules.length === 0) {
+            console.warn('PhysicsWorld: No rules to add');
+            return;
+        }
 
         const slotWidth = (width - 40) / rules.length;
         const dividers: Matter.Body[] = [];
+        const slots: Matter.Body[] = [];
 
         // Create dividers
         for (let i = 1; i < rules.length; i++) {
@@ -147,21 +178,97 @@ export class PhysicsWorld {
             dividers.push(divider);
         }
 
-        World.add(this.engine.world, dividers);
+        // Create slot sensors at the bottom for each rule
+        for (let i = 0; i < rules.length; i++) {
+            const x = 20 + (i * slotWidth) + (slotWidth / 2);
+            const slot = Bodies.rectangle(x, height - 10, slotWidth - 10, 20, {
+                isStatic: true,
+                isSensor: true,
+                render: {
+                    fillStyle: 'rgba(76, 209, 55, 0.3)',
+                    strokeStyle: '#4cd137',
+                    lineWidth: 2
+                },
+                label: `Slot_${rules[i].id}`
+            });
+            slots.push(slot);
+        }
+
+        World.add(this.engine.world, [...dividers, ...slots]);
+
+        // Add collision detection for slots
+        Matter.Events.on(this.engine, 'collisionStart', (event) => {
+            event.pairs.forEach((pair) => {
+                const { bodyA, bodyB } = pair;
+
+                // Check if collision is between a participant ball and a slot
+                const slot = bodyA.label.startsWith('Slot_') ? bodyA : bodyB.label.startsWith('Slot_') ? bodyB : null;
+                const ball = bodyA.label.startsWith('Slot_') ? bodyB : bodyA;
+
+                if (slot && ball && !ball.isStatic && ball.label !== 'Circle Body') {
+                    const slotId = slot.label.replace('Slot_', '');
+                    const participantName = ball.label;
+                    const winnerKey = `${participantName}_${slotId}`;
+
+                    // Only trigger once per participant-slot combination
+                    if (!this.detectedWinners.has(winnerKey)) {
+                        this.detectedWinners.add(winnerKey);
+                        const rule = this.rules.find(r => r.id === slotId);
+                        if (rule) {
+                            console.log(`Winner detected: ${participantName} won ${rule.label}`);
+                            this.onWinner({ id: ball.id.toString(), name: participantName }, rule);
+                        }
+                    }
+                }
+            });
+        });
     }
 
     public start() {
+        console.log('PhysicsWorld: Starting simulation');
         Matter.Render.run(this.render);
         Matter.Runner.run(this.runner, this.engine);
+
+        // Add stuck ball detection and nudging
+        this.stuckCheckInterval = setInterval(() => {
+            const bodies = Matter.Composite.allBodies(this.engine.world);
+            bodies.forEach(body => {
+                // Only check participant balls (non-static, non-peg bodies)
+                if (!body.isStatic && body.label !== 'Circle Body' && body.label !== 'Rectangle Body') {
+                    // If ball is moving very slowly and not at the bottom, give it a nudge
+                    const speed = Math.sqrt(body.velocity.x ** 2 + body.velocity.y ** 2);
+                    if (speed < 0.1 && body.position.y < 750) {
+                        // Apply small random force to unstick it
+                        Matter.Body.applyForce(body, body.position, {
+                            x: (this.rng() - 0.5) * 0.002,
+                            y: 0.001
+                        });
+                    }
+                }
+            });
+        }, 1000); // Check every second
+
+        console.log('PhysicsWorld: Simulation started');
     }
 
     public stop() {
+        console.log('PhysicsWorld: Stopping simulation');
+
+        // Clear stuck check interval
+        if (this.stuckCheckInterval) {
+            clearInterval(this.stuckCheckInterval);
+            this.stuckCheckInterval = null;
+        }
+
         Matter.Render.stop(this.render);
         Matter.Runner.stop(this.runner);
+        Matter.World.clear(this.engine.world, false);
         Matter.Engine.clear(this.engine);
-        this.render.canvas.remove();
-        this.render.canvas = null as any;
-        this.render.context = null as any;
-        this.render.textures = {};
+
+        // Don't remove the canvas, just clear it
+        const context = this.render.canvas.getContext('2d');
+        if (context) {
+            context.clearRect(0, 0, this.render.canvas.width, this.render.canvas.height);
+        }
     }
 }
