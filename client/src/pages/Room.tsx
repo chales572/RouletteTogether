@@ -53,9 +53,14 @@ const Room: React.FC<RoomProps> = ({ socket, roomName, userName }) => {
         });
 
         socket.on('host_status', ({ isHost: hostStatus, hostId: id }) => {
-            console.log('Host status received:', hostStatus, id);
+            console.log('Host status received:', hostStatus, 'Host ID:', id, 'My Socket ID:', socket.id);
             setIsHost(hostStatus);
             setHostId(id);
+            if (hostStatus) {
+                console.log('🎩 You are the HOST!');
+            } else {
+                console.log('👤 You are a participant');
+            }
         });
 
         socket.on('error_message', ({ message }) => {
@@ -198,13 +203,13 @@ const Room: React.FC<RoomProps> = ({ socket, roomName, userName }) => {
     return (
         <div className="room-container">
             <div className="sidebar left-sidebar glass-card">
-                <h2>참가자 ({participants.length}명)</h2>
+                <h2>참가자 ({participants.length}명) {isHost && <span style={{fontSize: '0.8rem', color: '#ffd700'}}>👑 방장</span>}</h2>
                 <ul className="participant-list">
                     {participants.map((p) => (
                         <li key={p.id} className={p.name === userName ? 'me' : ''}>
                             <span>
                                 {p.name}
-                                {p.id === hostId && <span className="host-icon">👑</span>}
+                                {p.id === hostId && <span className="host-icon" title="방장">👑</span>}
                             </span>
                             {isHost && p.id !== hostId && (
                                 <button
@@ -260,7 +265,11 @@ const Room: React.FC<RoomProps> = ({ socket, roomName, userName }) => {
                     <div className="room-info">
                         <h2>
                             초대 코드: {roomName}
-                            {isHost && <span className="host-badge">👑 방장</span>}
+                            {isHost ? (
+                                <span className="host-badge">👑 방장</span>
+                            ) : (
+                                <span className="participant-badge">👤 참가자</span>
+                            )}
                         </h2>
                         <button
                             className="copy-btn"
@@ -461,6 +470,17 @@ const Room: React.FC<RoomProps> = ({ socket, roomName, userName }) => {
             font-size: 0.8rem;
             font-weight: bold;
             box-shadow: 0 2px 4px rgba(255, 215, 0, 0.3);
+        }
+        .participant-badge {
+            display: inline-block;
+            margin-left: 10px;
+            padding: 4px 10px;
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.7);
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
         .add-rule-form {
             display: flex;
