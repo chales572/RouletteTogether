@@ -150,6 +150,64 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('kick_user', ({ roomName, userId }) => {
+        const room = rooms.get(roomName);
+        if (room) {
+            // Only host can kick users
+            if (socket.id !== room.hostId) {
+                socket.emit('error_message', { message: '방장만 사용자를 강제 퇴장시킬 수 있습니다.' });
+                return;
+            }
+
+            // Cannot kick yourself
+            if (userId === socket.id) {
+                socket.emit('error_message', { message: '자기 자신을 강제 퇴장시킬 수 없습니다.' });
+                return;
+            }
+
+            const participantIndex = room.participants.findIndex(p => p.id === userId);
+            if (participantIndex !== -1) {
+                const kickedUser = room.participants[participantIndex];
+                room.participants.splice(participantIndex, 1);
+
+                // Notify the kicked user
+                io.to(userId).emit('kicked');
+
+                // Update participant list for remaining users
+                io.to(roomName).emit('participant_list', room.participants);
+
+                // Send notification
+                const leaveNotification: UserNotification = {
+                    userName: kickedUser.name,
+                    type: 'leave',
+                    timestamp: Date.now()
+                };
+                io.to(roomName).emit('user_notification', leaveNotification);
+
+                console.log(`${kickedUser.name} was kicked from ${roomName} by host`);
+            }
+        }
+    });
+
+    socket.on('destroy_room', ({ roomName }) => {
+        const room = rooms.get(roomName);
+        if (room) {
+            // Only host can destroy room
+            if (socket.id !== room.hostId) {
+                socket.emit('error_message', { message: '방장만 방을 파괴할 수 있습니다.' });
+                return;
+            }
+
+            // Notify all users in the room that it's being destroyed
+            io.to(roomName).emit('room_destroyed');
+
+            // Remove the room
+            rooms.delete(roomName);
+
+            console.log(`Room ${roomName} was destroyed by host`);
+        }
+    });
+
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
         // Remove user/handle cleanup
@@ -167,6 +225,12 @@ io.on('connection', (socket) => {
                     timestamp: Date.now()
                 };
                 io.to(roomName).emit('user_notification', leaveNotification);
+
+                // If the room is empty, delete it
+                if (room.participants.length === 0) {
+                    rooms.delete(roomName);
+                    console.log(`Room ${roomName} deleted (empty)`);
+                }
             }
         });
     });

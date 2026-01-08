@@ -97,6 +97,24 @@ input:focus {
   transform: translateY(-1px);
 }
 
+.btn-danger {
+  background: linear-gradient(45deg, #ff6b6b, #ee5a6f);
+  border: none;
+  padding: 1rem;
+  border-radius: 8px;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  transition: opacity 0.3s, transform 0.2s;
+  font-size: 1rem;
+}
+
+.btn-danger:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  background: linear-gradient(45deg, #ee5a6f, #ff6b6b);
+}
+
 .redirect-message {
     text-align: center;
     color: white;

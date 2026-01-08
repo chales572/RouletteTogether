@@ -37,6 +37,8 @@ export interface ClientToServerEvents {
     start_game: (data: { roomName: string }) => void;
     set_game_mode: (data: { roomName: string; mode: GameMode }) => void;
     send_emoticon: (data: { roomName: string; emoticon: string }) => void;
+    kick_user: (data: { roomName: string; userId: string }) => void;
+    destroy_room: (data: { roomName: string }) => void;
 }
 
 export interface ServerToClientEvents {
@@ -49,6 +51,8 @@ export interface ServerToClientEvents {
     error: (message: string) => void;
     emoticon_received: (data: EmoticonMessage) => void;
     user_notification: (data: UserNotification) => void;
+    kicked: () => void;
+    room_destroyed: () => void;
 }
 
 // Dummy runtime export to ensure this file is treated as a module

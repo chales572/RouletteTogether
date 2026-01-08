@@ -85,6 +85,16 @@ const Room: React.FC<RoomProps> = ({ socket, roomName, userName }) => {
             }, 5000);
         });
 
+        socket.on('kicked', () => {
+            alert('방장에 의해 강제 퇴장당했습니다.');
+            window.location.href = '/';
+        });
+
+        socket.on('room_destroyed', () => {
+            alert('방이 파괴되었습니다.');
+            window.location.href = '/';
+        });
+
         return () => {
             socket.off('participant_list');
             socket.off('rule_list');
@@ -94,6 +104,8 @@ const Room: React.FC<RoomProps> = ({ socket, roomName, userName }) => {
             socket.off('game_mode_updated');
             socket.off('emoticon_received');
             socket.off('user_notification');
+            socket.off('kicked');
+            socket.off('room_destroyed');
         };
     }, [socket, roomName]);
 
@@ -160,6 +172,18 @@ const Room: React.FC<RoomProps> = ({ socket, roomName, userName }) => {
         }
     };
 
+    const handleKickUser = (userId: string) => {
+        if (socket && confirm('이 사용자를 강제 퇴장시키겠습니까?')) {
+            socket.emit('kick_user', { roomName, userId });
+        }
+    };
+
+    const handleDestroyRoom = () => {
+        if (socket && confirm('방을 파괴하시겠습니까? 모든 사용자가 강제 퇴장됩니다.')) {
+            socket.emit('destroy_room', { roomName });
+        }
+    };
+
     // Automatically stop the game after 30 seconds to allow replay
     useEffect(() => {
         if (isPlaying) {
@@ -178,8 +202,19 @@ const Room: React.FC<RoomProps> = ({ socket, roomName, userName }) => {
                 <ul className="participant-list">
                     {participants.map((p) => (
                         <li key={p.id} className={p.name === userName ? 'me' : ''}>
-                            {p.name}
-                            {p.id === hostId && <span className="host-icon">👑</span>}
+                            <span>
+                                {p.name}
+                                {p.id === hostId && <span className="host-icon">👑</span>}
+                            </span>
+                            {isHost && p.id !== hostId && (
+                                <button
+                                    className="kick-btn"
+                                    onClick={() => handleKickUser(p.id)}
+                                    title="강제 퇴장"
+                                >
+                                    ❌
+                                </button>
+                            )}
                         </li>
                     ))}
                 </ul>
@@ -257,14 +292,25 @@ const Room: React.FC<RoomProps> = ({ socket, roomName, userName }) => {
                             📋 링크 복사
                         </button>
                     </div>
-                    <button
-                        className="btn-primary"
-                        onClick={handleStart}
-                        disabled={isPlaying || !isHost}
-                        title={!isHost ? '방장만 게임을 시작할 수 있습니다' : ''}
-                    >
-                        {isPlaying ? '돌아가는 중...' : '룰렛 시작'}
-                    </button>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                        <button
+                            className="btn-primary"
+                            onClick={handleStart}
+                            disabled={isPlaying || !isHost}
+                            title={!isHost ? '방장만 게임을 시작할 수 있습니다' : ''}
+                        >
+                            {isPlaying ? '돌아가는 중...' : '룰렛 시작'}
+                        </button>
+                        {isHost && (
+                            <button
+                                className="btn-danger"
+                                onClick={handleDestroyRoom}
+                                title="방 파괴 (모든 사용자 강제 퇴장)"
+                            >
+                                🗑️ 방 파괴
+                            </button>
+                        )}
+                    </div>
                 </div>
                 <GameCanvas
                     participants={participants}
@@ -379,10 +425,28 @@ const Room: React.FC<RoomProps> = ({ socket, roomName, userName }) => {
         .participant-list li, .rule-list li {
             padding: 10px;
             border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         .participant-list li.me {
             color: var(--primary-color);
             font-weight: bold;
+        }
+        .kick-btn {
+            padding: 4px 8px;
+            background: rgba(255, 107, 107, 0.2);
+            border: 1px solid rgba(255, 107, 107, 0.5);
+            border-radius: 6px;
+            color: #ff6b6b;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+        .kick-btn:hover {
+            background: rgba(255, 107, 107, 0.4);
+            border-color: #ff6b6b;
+            transform: scale(1.1);
         }
         .host-icon {
             margin-left: 8px;
