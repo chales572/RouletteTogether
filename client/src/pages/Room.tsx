@@ -292,16 +292,15 @@ const Room: React.FC<RoomProps> = ({ socket, roomName, userName }) => {
                             📋 링크 복사
                         </button>
                     </div>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                        <button
-                            className="btn-primary"
-                            onClick={handleStart}
-                            disabled={isPlaying || !isHost}
-                            title={!isHost ? '방장만 게임을 시작할 수 있습니다' : ''}
-                        >
-                            {isPlaying ? '돌아가는 중...' : '룰렛 시작'}
-                        </button>
-                        {isHost && (
+                    {isHost && (
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <button
+                                className="btn-primary"
+                                onClick={handleStart}
+                                disabled={isPlaying}
+                            >
+                                {isPlaying ? '돌아가는 중...' : '룰렛 시작'}
+                            </button>
                             <button
                                 className="btn-danger"
                                 onClick={handleDestroyRoom}
@@ -309,8 +308,8 @@ const Room: React.FC<RoomProps> = ({ socket, roomName, userName }) => {
                             >
                                 🗑️ 방 파괴
                             </button>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
                 <GameCanvas
                     participants={participants}
