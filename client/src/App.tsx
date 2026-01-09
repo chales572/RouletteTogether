@@ -3,22 +3,46 @@ import { BrowserRouter as Router, Routes, Route, useParams } from 'react-router-
 import Landing from './pages/Landing';
 import Room from './pages/Room';
 import { useSocket } from './hooks/useSocket';
-import type { GameMode } from './types';
+import type { GameMode, RoomType } from './types';
 import './App.css';
 
 function App() {
   const socket = useSocket();
   const [user, setUser] = useState<{ name: string; room: string } | null>(null);
-  const [pendingJoin, setPendingJoin] = useState<{ roomName: string; userName: string; gameMode?: GameMode } | null>(null);
+  const [pendingJoin, setPendingJoin] = useState<{ roomName: string; userName: string; gameMode?: GameMode; roomType?: RoomType } | null>(null);
+  const [hostStatus, setHostStatus] = useState<{ isHost: boolean; hostId: string }>({ isHost: false, hostId: '' });
+
+  // Set up host_status listener globally BEFORE any join_room events
+  useEffect(() => {
+    if (!socket) return;
+
+    console.log('Setting up global host_status listener');
+
+    const handleHostStatus = ({ isHost, hostId }: { isHost: boolean; hostId: string }) => {
+      console.log('🎯 Host status received in App:', isHost, 'Host ID:', hostId, 'My Socket ID:', socket.id);
+      setHostStatus({ isHost, hostId });
+      if (isHost) {
+        console.log('🎩 You are the HOST!');
+      } else {
+        console.log('👤 You are a participant');
+      }
+    };
+
+    socket.on('host_status', handleHostStatus);
+
+    return () => {
+      socket.off('host_status', handleHostStatus);
+    };
+  }, [socket]);
 
   // Handle pending join when socket becomes available
   useEffect(() => {
     if (socket && pendingJoin) {
       console.log('Socket ready, processing pending join:', pendingJoin);
-      socket.emit('join_room', { roomName: pendingJoin.roomName, userName: pendingJoin.userName });
+      socket.emit('join_room', { roomName: pendingJoin.roomName, userName: pendingJoin.userName, roomType: pendingJoin.roomType });
 
-      // Set game mode if provided (for room creator)
-      if (pendingJoin.gameMode !== undefined) {
+      // Set game mode if provided (for room creator) - only for roulette mode
+      if (pendingJoin.gameMode !== undefined && pendingJoin.roomType !== 'betting') {
         setTimeout(() => {
           socket.emit('set_game_mode', { roomName: pendingJoin.roomName, mode: pendingJoin.gameMode! });
         }, 100);
@@ -29,14 +53,14 @@ function App() {
     }
   }, [socket, pendingJoin]);
 
-  const handleJoin = (roomName: string, userName: string, gameMode?: GameMode) => {
-    console.log('handleJoin called:', { roomName, userName, gameMode, socketConnected: !!socket });
+  const handleJoin = (roomName: string, userName: string, gameMode?: GameMode, roomType?: RoomType) => {
+    console.log('handleJoin called:', { roomName, userName, gameMode, roomType, socketConnected: !!socket });
     if (socket) {
       console.log('Emitting join_room event');
-      socket.emit('join_room', { roomName, userName });
+      socket.emit('join_room', { roomName, userName, roomType });
 
-      // Set game mode if provided (for room creator)
-      if (gameMode !== undefined) {
+      // Set game mode if provided (for room creator) - only for roulette mode
+      if (gameMode !== undefined && roomType !== 'betting') {
         setTimeout(() => {
           socket.emit('set_game_mode', { roomName, mode: gameMode });
         }, 100);
@@ -45,7 +69,7 @@ function App() {
       setUser({ name: userName, room: roomName });
     } else {
       console.warn('Socket not ready yet, queueing join request');
-      setPendingJoin({ roomName, userName, gameMode });
+      setPendingJoin({ roomName, userName, gameMode, roomType });
       setUser({ name: userName, room: roomName });
     }
   };
@@ -55,7 +79,7 @@ function App() {
       <div className="app-container">
         <Routes>
           <Route path="/" element={<Landing onJoin={handleJoin} />} />
-          <Route path="/room/:id" element={<RoomWrapper socket={socket} user={user} />} />
+          <Route path="/room/:id" element={<RoomWrapper socket={socket} user={user} hostStatus={hostStatus} />} />
         </Routes>
       </div>
     </Router>
@@ -63,7 +87,7 @@ function App() {
 }
 
 // Wrapper to pass params
-const RoomWrapper = ({ socket, user }: { socket: any, user: any }) => {
+const RoomWrapper = ({ socket, user, hostStatus }: { socket: any, user: any, hostStatus: { isHost: boolean; hostId: string } }) => {
   const { id } = useParams();
   const [userName, setUserName] = useState('');
   const [showNamePrompt, setShowNamePrompt] = useState(false);
@@ -117,7 +141,7 @@ const RoomWrapper = ({ socket, user }: { socket: any, user: any }) => {
     );
   }
 
-  return <Room socket={socket} roomName={id || ''} userName={user?.name || userName} />;
+  return <Room socket={socket} roomName={id || ''} userName={user?.name || userName} initialHostStatus={hostStatus} />;
 };
 
 export default App;
